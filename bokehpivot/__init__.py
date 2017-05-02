@@ -56,7 +56,9 @@ class BokehPivot:
         self.widgets = self.top_wdg.copy()
         self.plots = bl.column([], id='plots_section')
         if self.data_source != '':
-            self.df_source, self.columns = self.get_data(self.data_source)
+            self.df_source = self.get_data(self.data_source)
+            self.clean_df(self.df_source)
+            self.columns = self.categorize_cols(self.df_source)
             self.widgets.update(self.build_widgets(self.df_source, self.columns, self.wdg_col, self.wdg_non_col, init_load=True, init_config=self.wdg_config))
             self.set_wdg_col_options()
             self.update_plots()
@@ -74,29 +76,57 @@ class BokehPivot:
 
     def get_data(self, data_source):
         '''
-        Read a csv into a pandas dataframe, and determine which columns of the dataframe
-        are discrete (strings), continuous (numbers), able to be filtered (aka filterable),
-        and able to be used as a series (aka seriesable). NA values are filled based on the type of column,
-        and the dataframe and columns are returned.
+        Read a csv into a pandas dataframe
 
         Args:
             data_source (string): Path to csv file.
 
         Returns:
             df_source (pandas dataframe): A dataframe of the csv source, with filled NA values.
-            cols (dict): Keys are categories of columns of df_source, and values are a list of columns of that category.
         '''
 
-        df_source = pd.read_csv(data_source)
+        df = pd.read_csv(data_source)
+        return df
+
+    def categorize_cols(self, df):
+        '''
+        determine which columns of the dataframe
+        are discrete (strings), continuous (numbers), able to be filtered (aka filterable),
+        and able to be used as a series (aka seriesable).
+
+        Args:
+            df (pandas dataframe): dataframe whose columns will be categorized
+
+        Returns:
+            cols (dict): Keys are categories of columns of df, and values are a list of columns of that category.
+        '''
+
         cols = {}
-        cols['all'] = df_source.columns.values.tolist()
-        cols['discrete'] = [x for x in cols['all'] if df_source[x].dtype == object]
+        cols['all'] = df.columns.values.tolist()
+        cols['discrete'] = [x for x in cols['all'] if df[x].dtype == object]
         cols['continuous'] = [x for x in cols['all'] if x not in cols['discrete']]
-        cols['filterable'] = cols['discrete']+[x for x in cols['continuous'] if len(df_source[x].unique()) < 100]
-        cols['seriesable'] = cols['discrete']+[x for x in cols['continuous'] if len(df_source[x].unique()) < 60]
-        df_source[cols['discrete']] = df_source[cols['discrete']].fillna('{BLANK}')
-        df_source[cols['continuous']] = df_source[cols['continuous']].fillna(0)
-        return (df_source, cols)
+        cols['filterable'] = cols['discrete']+[x for x in cols['continuous'] if len(df[x].unique()) < 100]
+        cols['seriesable'] = cols['discrete']+[x for x in cols['continuous'] if len(df[x].unique()) < 60]
+        return cols
+
+
+    def clean_df(self, df):
+        '''
+        NA values are filled based on the type of column,
+        and the dataframe and columns are returned.
+
+        Args:
+            df (pandas dataframe): input dataframe that will be cleaned
+
+        Returns:
+            None- The dataframe (df) is cleaned directly.
+        '''
+
+        cols = df.columns.values.tolist()
+        discrete = [x for x in cols if df[x].dtype == object]
+        continuous = [x for x in cols if x not in discrete]
+        df[discrete] = df[discrete].fillna('{BLANK}')
+        df[continuous] = df[continuous].fillna(0)
 
     def build_widgets(self, df_source, cols, wdg_col, wdg_non_col, init_load=False, init_config={}):
         '''
@@ -531,14 +561,15 @@ class BokehPivot:
         except ZeroDivisionError:
             return 0
 
-
     def update_data(self, attr, old, new):
         '''
         When data source is updated, rebuild widgets and plots.
         '''
         self.widgets = self.top_wdg.copy()
         if self.widgets['data'].value != '':
-            self.df_source, self.columns = self.get_data(self.widgets['data'].value)
+            self.df_source = self.get_data(self.widgets['data'].value)
+            self.clean_df(self.df_source)
+            self.columns = self.categorize_cols(self.df_source)
             self.widgets.update(self.build_widgets(self.df_source, self.columns, self.wdg_col, self.wdg_non_col))
         self.controls.children = list(self.widgets.values())
         self.plots.children = []
